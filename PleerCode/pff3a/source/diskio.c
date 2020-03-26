@@ -15,9 +15,11 @@ DSTATUS disk_initialize (void)
 
 	// Put your code here
 
-	 
+	uint8_t version;
 
-	if (SD_Initialize() == SD_IN_READY_STATE)
+	version=SD_Initialize();
+
+	if ( (version == VER1_SDSC) || (version == VER2_SDSC) || (version == VER2_SDHC_SDXC) )
 		stat=STA_INIT_SUCCESS;
 	else
 		stat=STA_NOINIT;		

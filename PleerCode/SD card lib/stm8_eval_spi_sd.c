@@ -125,11 +125,13 @@ uint8_t SD_Initialize(void)
 {
   uint8_t i=0;
   uint8_t resp1=1;
+  uint8_t Count=3;
+  SD_Version version;
 
-   SD_SPI_Init(); //инициализация SPI модуля и установка режимов пинов
+
+  SD_SPI_Init(); //инициализация SPI модуля и установка режимов пинов, включая CS
    
-
-  //IDLE
+  //Idle State
 
   //посылаются быйты 0xFF для отправки мимнимум 74 тактовых сигналов, как я понял, нужно для того, чтобы SD карта настроилась на частоту
   for (i = 0; i < 13; i++)  // минимум 74 такта, здесь посылается 8 бит*12 =96 тактов, чтоб наверняка
@@ -147,47 +149,74 @@ uint8_t SD_Initialize(void)
       /*!< No Idle State Response: return response failue */
     return SD_RESPONSE_FAILURE;
     };
-  
-  //CMD8
-   SD_SendCmd(8, 0x01AA, 0x87);
-   SD_WriteByte(SD_DUMMY_BYTE);
-   SD_ReadByte();
-   SD_ReadByte();
-   SD_ReadByte();
-   SD_ReadByte();
-   SD_ReadByte();
-  
-    
-//INITIALIZATION   
-  
-   do{                                           //на некоторых сайтах пишут, что можно использовать команду CMD1 для инициализации, но я буду делать по спецификации
-  //CMD55
-   SD_SendCmd(55,0,0);//попробуем без CRC
-   SD_WriteByte(SD_DUMMY_BYTE);
-   SD_ReadByte();
-  
-  //ACMD41   
-   SD_SendCmd(41,(uint32_t)1<<30,0);//попробуем без CRC
-   SD_WriteByte(SD_DUMMY_BYTE);
-   resp1=SD_ReadByte();   //надо бы ещё в течение секунды проверять ответ, потому что инициализация может идти долго, 
-                           //а потом уже заново подавать команду, а также нужно обработать неудовлетворяющие ответы и всё это в отдельной функции
-   }while(resp1);
-  
 
+  //Card goes into SPI Operation Mode
+  
+  //CMD8 проверяет поддержку диапазона питания 
+  SD_SendCmd(SD_CMD_SEND_IF_COND, 0x01AA, 0x87); //в аргументе: 20 битов зарезервированы, 4 бита -0b0001- означают VHS(voltage host supply), 8 бит-0b10101010 - проверочный шаблон (Check Pattern)
+  SD_WriteByte(SD_DUMMY_BYTE);
+  //CMD8 возвращает ответ R7, в который входит 5 байт 
+  resp1= SD_GetResponse1();      
+  if ( resp1 == SD_IN_IDLE_STATE )   //5ый байт
+  {
+   SD_ReadByte();                   //4ый и 3ий байты с Reserved Bits, просто игнорим
+   SD_ReadByte();
+   if ( SD_ReadByte()==0 )             //2ой байт содержит VCA, если он равен 0, то карта не поддерживает напряжение в VHS, в итоге карта не подходит
+    return UNUSABLE_CARD;
+   SD_ReadByte();                    //содержит CheckPattern, игнорим
+  }else
+    if ( resp1 == SD_ILLEGAL_COMMAND )
+      version=VER1_SDSC;
+   
+   //Initialization 
+   //на некоторых сайтах пишут, что можно использовать команду CMD1 для инициализации, но я буду делать по спецификации
+   do{                                          
+       //CMD55
+       SD_SendCmd(SD_CMD_APP_CMD,0,0);               //аргумент и CRC не имеют значения
+       SD_WriteByte(SD_DUMMY_BYTE);
+       SD_ReadByte();                         //ответ R1, здесь он пока не интересует
+                                   
+      //ACMD41   
+       SD_SendCmd(SD_ACMD_SD_SEND_OP_COND, ACMD41_ARG , 0x01);  //нулевой бит должен быть равен 1 по спецификации (4.2.3.1)
+       SD_WriteByte(SD_DUMMY_BYTE);
+       resp1=SD_GetResponse(SD_IN_READY_STATE);
+
+       if ( resp1 == SD_RESPONSE_NO_ERROR )
+          break;
+       else
+         if ( Count==0 && (resp1 == SD_RESPONSE_FAILURE) )       
+            return  SD_RESPONSE_FAILURE;  
+
+   } while(Count--);
+   
+   Count=7;
+
+   do{
   //CMD58
-   SD_SendCmd(58,0,0);//попробуем без CRC
+   SD_SendCmd(SD_CMD_READ_OCR,0,0);
    SD_WriteByte(SD_DUMMY_BYTE);
+   if ( SD_GetResponse(SD_IN_READY_STATE) == SD_RESPONSE_FAILURE )
+      return  SD_RESPONSE_FAILURE;
+
    resp1=SD_ReadByte();
+   if (resp1 & 0x80){    //проверка Card power up status bit (busy bit)
+      Count=0;
+      if (version != VER1_SDSC)    //если версия уже была присвоена, то она и отсаётся
+        if (resp1 & 0x40)          //проверка Card Capacity Status bit
+          version=VER2_SDHC_SDXC;
+        else
+          version=VER2_SDSC;
+    }else
+      if (Count==0 && !(resp1 & 0x80))
+        return UNUSABLE_CARD;
+
+   SD_ReadByte();     //это зарезервированные байты плюс значения поддерживаемых напряжений, просто все игнорим
    SD_ReadByte();
    SD_ReadByte();
-   SD_ReadByte();
-   SD_ReadByte();
+
+  } while(Count--);
    
-   
-   if(resp1 == SD_IN_READY_STATE)
-    return SD_IN_READY_STATE;
-   else
-    return resp1;
+   return version;
 }
 
 
@@ -756,7 +785,7 @@ uint8_t SD_GetDataResponse(void)
 
   while (i <= 64)
   {
-    /*!< Read resonse */
+    /*!< Read response */
     response = SD_ReadByte();
     /*!< Mask unused bits */
     response &= 0x1F;
@@ -805,7 +834,7 @@ uint8_t SD_GetResponse(uint8_t Response)
   /*!< Check if response is got or a timeout is happen */
   while ((SD_ReadByte() != Response) && Count)
   {
-    Count--;  //проверяем ответ несколько раз, при первом же совпадении с нужным значением ответа покаидаем цикл
+    Count--;  //проверяем ответ несколько раз, при первом же совпадении с нужным значением ответа покидаем цикл
   }
   if (Count == 0)
   {
@@ -818,6 +847,38 @@ uint8_t SD_GetResponse(uint8_t Response)
     return SD_RESPONSE_NO_ERROR;  //если мы получили правильный ответ до окончания цикла, то возвращаем отсутствие ошибок 
   }
 }
+
+uint8_t SD_GetResponse1(void)
+{
+  uint8_t Count = 25;
+
+  do{
+      switch(SD_ReadByte()) {
+    case SD_IN_READY_STATE:
+        return SD_IN_READY_STATE;
+    case SD_IN_IDLE_STATE:
+        return SD_IN_IDLE_STATE;
+    case SD_ERASE_RESET:
+        return SD_ERASE_RESET;
+    case SD_ILLEGAL_COMMAND:
+        return SD_ILLEGAL_COMMAND;
+    case SD_COM_CRC_ERROR:
+        return SD_COM_CRC_ERROR;
+    case SD_ERASE_SEQUENCE_ERROR:
+        return SD_ERASE_SEQUENCE_ERROR;
+    case SD_ADDRESS_ERROR:
+        return SD_ADDRESS_ERROR;
+    case SD_PARAMETER_ERROR:
+        return SD_PARAMETER_ERROR;
+    default:
+        Count--;
+        break;
+    };
+  } while (Count);
+
+    return SD_RESPONSE_FAILURE;
+};
+
 
 /**
   * @brief  Returns the SD status.

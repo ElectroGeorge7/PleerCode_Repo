@@ -122,6 +122,16 @@ typedef struct
   uint32_t CardBlockSize; /*!< Card Block Size */
 } SD_CardInfo;
 
+typedef enum
+{
+  UNDEFINED_SD = ((uint8_t)0x00),
+  VER1_SDSC = ((uint8_t)0x01),
+  VER2_SDSC = ((uint8_t)0x02),
+  VER2_SDHC_SDXC = ((uint8_t)0x03),
+  UNUSABLE_CARD = ((uint8_t)0x04)
+} SD_Version;
+
+
 /**
   * @}
   */
@@ -186,6 +196,7 @@ typedef struct
   */
 #define SD_CMD_GO_IDLE_STATE          0   /*!< CMD0 = 0x40 */
 #define SD_CMD_SEND_OP_COND           1   /*!< CMD1 = 0x41 */
+#define SD_CMD_SEND_IF_COND           8   /*!< CMD8 = 0x48 */
 #define SD_CMD_SEND_CSD               9   /*!< CMD9 = 0x49 */
 #define SD_CMD_SEND_CID               10  /*!< CMD10 = 0x4A */
 #define SD_CMD_STOP_TRANSMISSION      12  /*!< CMD12 = 0x4C */
@@ -207,6 +218,15 @@ typedef struct
 #define SD_CMD_ERASE_GRP_END          36  /*!< CMD36 = 0x64 */
 #define SD_CMD_UNTAG_ERASE_GROUP      37  /*!< CMD37 = 0x65 */
 #define SD_CMD_ERASE                  38  /*!< CMD38 = 0x66 */
+#define SD_CMD_APP_CMD                55  /*!< CMD55 = 0x77 */
+#define SD_CMD_READ_OCR               58  /*!< CMD58 = 0x7A */
+#define SD_ACMD_SD_SEND_OP_COND       41  /*!< ACMD41 */
+
+
+
+//аргумент команды ACMD41
+#define ACMD41_ARG        ((uint32_t)( 0x40FF8000 ))    //(1<<30) | (0x1FF<<15) Host Capacity Support(HCS) | voltage window field (bit 23-0) of OCR раздел (4.2.3.1)
+
 
 /**
   * @}
@@ -240,7 +260,7 @@ uint8_t SD_Initialize(void);                                                    
 
 uint8_t SD_Detect(void);
 uint8_t SD_GetCardInfo(SD_CardInfo *cardinfo);
-uint8_t SD_ReadBlock(uint8_t* pBuffer, uint32_t ReadAddr, uint16_t BlockSize);              //эта функция работает
+uint8_t SD_ReadBlock(uint8_t* pBuffer, uint32_t ReadAddr, uint16_t BlockSize);              //эта функция работает, почему то при высоких частотах функция передачи данных функция не работала
 uint8_t SD_ReadBuffer(uint8_t *pBuffer, uint32_t ReadAddr, uint32_t NumByteToRead);         //насчёт работоспособности не знаю, но в Petit FAT она не нужна
 uint8_t SD_WriteBlock(uint8_t* pBuffer, uint32_t WriteAddr, uint16_t BlockSize);            //эта функция работает
 uint8_t SD_WriteBuffer(uint8_t *pBuffer, uint32_t WriteAddr, uint32_t NumByteToWrite);      //насчёт работоспособности не знаю, но в Petit FAT она не нужна
@@ -248,8 +268,11 @@ uint8_t SD_GetCSDRegister(SD_CSD* SD_csd);                                      
 uint8_t SD_GetCIDRegister(SD_CID* SD_cid);                                                  //надо проверить
 
 void SD_SendCmd(uint8_t Cmd, uint32_t Arg, uint8_t Crc);                                    //эта функция работает
-uint8_t SD_GetResponse(uint8_t Response);                                                   //не уверен
+
+uint8_t SD_GetResponse(uint8_t Response);                                                   //не уверен, ну по идее должна, кроме чтения байта по SPI 25 раз, в ней ничего нет
+uint8_t SD_GetResponse1(void);                                                              //мной написанная функция, которая выводит ошибку R1
 uint8_t SD_GetDataResponse(void);                                                           //не уверен
+
 uint8_t SD_GoIdleState(void);                                                               //нет
 uint16_t SD_GetStatus(void);                                                                //не знаю
 
