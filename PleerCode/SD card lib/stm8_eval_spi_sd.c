@@ -215,6 +215,8 @@ uint8_t SD_Initialize(void)
    SD_ReadByte();
 
   } while(Count--);
+
+  SD_SPI_Init_HighFreq();
    
    return version;
 }

@@ -41,7 +41,6 @@
   */
 
 
-
 /**
   * @brief  DeInitializes the SD/SD communication.
   * @param  None
@@ -117,9 +116,10 @@ void SD_SPI_Init(void)
                            
   SD_SPI_SCK_GPIO_PORT->ODR|=SD_CS_PIN;  //сначала поставим линии CS в высокий уровень
   
-  //РЕЖИМSPI 
+  //РЕЖИМ SPI 
   //делитель ставим на 64, в итоге получается частота на SCK равная 16МГц/64=250кГц, ВНИМАНИЕ!!! при инициализации частота на SCK должна быть в диапазоне 100кГц-400кГЦ
-  SPI_Init (SD_SPI,SPI_FirstBit_MSB,SPI_BaudRatePrescaler_64,SPI_Mode_Master,SPI_CPOL_Low,SPI_CPHA_1Edge,SPI_Direction_2Lines_FullDuplex,SPI_NSS_Soft, 0x07); //устанваливаем режим работы модуля
+  SPI_Init (SD_SPI,SPI_FirstBit_MSB,SPI_BaudRatePrescaler_64,SPI_Mode_Master,SPI_CPOL_Low,SPI_CPHA_1Edge, \
+   SPI_Direction_2Lines_FullDuplex,SPI_NSS_Soft, 0x07); //устанваливаем режим работы модуля
   
   SPI_Cmd(SD_SPI, ENABLE); //включаем модуль SPI
   
@@ -127,12 +127,16 @@ void SD_SPI_Init(void)
 
 }
 
-void SD_SPI_Init_HighFreq(void)
-{
 
-  //РЕЖИМSPI 
-  //делитель ставим на 64, в итоге получается частота на SCK равная 16МГц/64=250кГц, ВНИМАНИЕ!!! при инициализации частота на SCK должна быть в диапазоне 100кГц-400кГЦ
-  SPI_Init (SD_SPI,SPI_FirstBit_MSB,SPI_BaudRatePrescaler_16,SPI_Mode_Master,SPI_CPOL_Low,SPI_CPHA_1Edge,SPI_Direction_2Lines_FullDuplex,SPI_NSS_Soft, 0x07); //устанваливаем режим работы модуля
+void SD_SPI_Init_HighFreq(void)  
+{
+  //РЕЖИМ SPI 
+
+  SPI_Cmd(SD_SPI, DISABLE);
+  //После завершения инициализации скорость передачи данных по SPI можно увеличить
+  //Повышать скорость можно в любой момент после инициализации, но не в момент передачи байта
+  SPI_Init (SD_SPI,SPI_FirstBit_MSB,SPI_High_Freq,SPI_Mode_Master,SPI_CPOL_Low,SPI_CPHA_1Edge, \
+   SPI_Direction_2Lines_FullDuplex,SPI_NSS_Soft, 0x07); //устанваливаем режим работы модуля
   
   SPI_Cmd(SD_SPI, ENABLE); //включаем модуль SPI
 

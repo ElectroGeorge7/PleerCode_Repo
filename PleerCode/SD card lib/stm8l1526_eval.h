@@ -52,6 +52,8 @@
 /**
   * @}
   */
+//коэф. деления для SPI при повышении частоты работы
+#define SPI_High_Freq  SPI_BaudRatePrescaler_16
 
 
 /* Exported Macros ------------------------------------------------------------*/
@@ -65,7 +67,9 @@ void SD_LowLevel_Init(void);
 
 //эти функции написаны мною, немного отличаюся от тех, что выше
 void SD_SPI_Init(void);
-void SD_SPI_Init_HighFreq(void);
+
+void SD_SPI_Init_HighFreq(void);   //функция увеличивает скорость передачи данных по SPI, во время инициализации ограничение в 400кГц
+
 void SD_SPI_DeInit(void);
 
 /**

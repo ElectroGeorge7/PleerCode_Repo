@@ -137,8 +137,6 @@ int main( void )
   Delay(1000);     
   //смонтировать диск
   res = pf_mount(&fs);
-  //системная частота установлена в 16МГц, а скорость SPI в 250кГц
-  SD_SPI_Init_HighFreq();
   res1=pf_open("BACKIN.wav");
   res2 = pf_read(Buffer1, BUFFER_SIZE, &br);
   Buf1_Status=BUF_WAS_WRITTEN;
