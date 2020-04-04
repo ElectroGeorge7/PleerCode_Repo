@@ -128,7 +128,7 @@ uint8_t CRC22=0;
 uint8_t ReadStatus=1;
 
 //при частоте после предделителя таймера 4 Мгц
-#define TIM4_22kHz_FREQ  182//181  
+#define TIM4_22kHz_FREQ  181//181  
 #define TIM4_44kHz_FREQ  91 
 
 int main( void )
@@ -137,7 +137,7 @@ int main( void )
   Delay(1000);     
   //смонтировать диск
   res = pf_mount(&fs);
-  res1=pf_open("BACKIN.wav");
+  res1=pf_open("BACKINBL.wav");
   res2 = pf_read(Buffer1, BUFFER_SIZE, &br);
   Buf1_Status=BUF_WAS_WRITTEN;
   Buf2_Status=BUF_WAS_READ;
@@ -145,31 +145,21 @@ int main( void )
 
 //Установка таймера 4
   CLK_PeripheralClockConfig( CLK_Peripheral_TIM4, ENABLE);
-
   //будем считать, что общая системная частота равна 16 МГц
   TIM4_TimeBaseInit(TIM4_Prescaler_4, TIM4_22kHz_FREQ);    //при изменении системной частоты изменить значение предделителя
-
   asm("rim"); //глобально разрешаем прерывание
-
   TIM4_ITConfig(TIM4_IT_Update, ENABLE); //разрешаем прерывания
-
   TIM4_Cmd(ENABLE);
 
 
 //Инициализация ЦАП
  GPIO_Init( GPIOF , GPIO_Pin_0, GPIO_Mode_In_FL_No_IT);  //аналоговый режим (RM0031 стр.121)
- 
  CLK_PeripheralClockConfig(CLK_Peripheral_DAC, ENABLE);
- 
  DAC_Init(DAC_Channel_1, DAC_Trigger_Software, DAC_OutputBuffer_Enable);
- 
  DAC_Cmd(DAC_Channel_1, ENABLE);
- 
  DAC_SoftwareTriggerCmd(DAC_Channel_1, ENABLE);
-
  DAC_SetChannel1Data(DAC_Align_12b_R, 0x20);
  
-
   
  while(1){
    if ( Buf1_Status == BUF_WAS_WRITTEN && Buf2_Status == BUF_WAS_READ )
@@ -185,95 +175,6 @@ int main( void )
    
  }
 
-
-/*
-   SD_SPI_Init(); //инициализация SPI модуля и установка режимов пинов
-   
-
-  //IDLE
-
-  //посылаются быйты 0xFF для отправки мимнимум 74 тактовых сигналов, как я понял, нужно для того, чтобы SD карта настроилась на частоту
-  for (i = 0; i < 13; i++)  // минимум 74 такта, здесь посылается 8 бит*12 =96 тактов, чтоб наверняка
-  {
-    SD_WriteByte(SD_DUMMY_BYTE); 
-  };
-  
-
-  //посылаем команду CMD0 (CRC=0x95 всегда, так все значени байтов известны)
-   SD_SendCmd(SD_CMD_GO_IDLE_STATE, 0, 0x95);
-    SD_WriteByte(SD_DUMMY_BYTE); //NCR byte for command response time, после команды обязательно минимум один раз нужно отправить 0xFF, 
-                                 //чтобы сгенерировать 8 тактовых импульсов на SCK для обработки полученной команды SD картой
-         
-  if (SD_GetResponse(SD_IN_IDLE_STATE) == SD_RESPONSE_FAILURE)  //если ответ не возвращает значение 0x01, то выходим из функции с ошибкой SD_RESPONSE_FAILURE
-    {
-      
-    return SD_RESPONSE_FAILURE;
-    };
-  
-  //CMD8
-   SD_SendCmd(8, 0x01AA, 0x87);
-   SD_WriteByte(SD_DUMMY_BYTE);
-   SD_ReadByte();
-   SD_ReadByte();
-   SD_ReadByte();
-   SD_ReadByte();
-   SD_ReadByte();
-  
-    
-//INITIALIZATION   
-  
-   do{                                           //на некоторых сайтах пишут, что можно использовать команду CMD1 для инициализации, но я буду делать по спецификации
-  //CMD55
-   SD_SendCmd(55,0,0);//попробуем без CRC
-   SD_WriteByte(SD_DUMMY_BYTE);
-   SD_ReadByte();
-  
-  //ACMD41   
-   SD_SendCmd(41,(uint32_t)1<<30,0);//попробуем без CRC
-   SD_WriteByte(SD_DUMMY_BYTE);
-   resp1=SD_ReadByte();   //надо бы ещё в течение секунды проверять ответ, потому что инициализация может идти долго, 
-                           //а потом уже заново подавать команду, а также нужно обработать неудовлетворяющие ответы и всё это в отдельной функции
-   }while(resp1);
-  
-
-  //CMD58
-   SD_SendCmd(58,0,0);//попробуем без CRC
-   SD_WriteByte(SD_DUMMY_BYTE);
-   resp1=SD_ReadByte();
-   SD_ReadByte();
-   SD_ReadByte();
-   SD_ReadByte();
-   SD_ReadByte();
-   
-   
-  SD_SPI_Init_HighFreq();
-  
-  SD_SendCmd(58,0,0);//попробуем без CRC
-   SD_WriteByte(SD_DUMMY_BYTE);
-   resp1=SD_ReadByte();
-   resp11=SD_ReadByte();
-   resp12=SD_ReadByte();
-   resp13=SD_ReadByte();
-   resp14=SD_ReadByte();
-   
-   //ReadStatus=SD_ReadBlock(Buffer1,0x6020, 500);;
-   disk_readp(Buffer1,0x4020,0,BUFFER_SIZE);
-   */
- 
-   /*
-   //READ
-  //CMD17
-  SD_SendCmd(17,0x6020,0);
-  SD_WriteByte(SD_DUMMY_BYTE);
-  resp1=SD_ReadByte();
-  do
-    startDataToken1=SD_ReadByte();  //start Data Token=11111110
-  while(startDataToken1!=0xFE);
-  for(j=0;j<500;j++)   //сначала передаются старшие байты
-  Buffer1[j]=SD_ReadByte();
-  CRC22=SD_ReadByte();
-  CRC11=SD_ReadByte();
-  */
 
 return 0;
 }

@@ -33,23 +33,43 @@ DSTATUS disk_initialize (void)
 
 
 
+
+
+
+
 /*-----------------------------------------------------------------------*/
 /* Read Partial Sector                                                   */
 /*-----------------------------------------------------------------------*/
 
 DRESULT disk_readp (
 	BYTE* buff,		/* Pointer to the destination object */
-	DWORD sector,	/* Sector number (LBA) */
+	DWORD sector,	/* Sector number (LBA) */ //в библиотеке также поддерживается обрадотка физического адреса, 
+											  //именно поэтому я не использую смещение до LBA
+											  //библиотека сама определяет по MBR(0 сектор) расположение boot record(BRB) 
+											  //и в последствии добавляет это смещение
 	UINT offset,	/* Offset in the sector */
 	UINT count		/* Byte count (bit15:destination) */
 )
 {
 	DRESULT res;
 
-	BYTE buffer[512];
+
+	if ((offset+count)>512)
+		{
+			return RES_PARERR;
+		};
+
+
+	if (SD_ReadBlock_PFF(buff, sector, offset, count ))
+		return RES_ERROR;
+	else
+		return RES_OK;
+
+	/*buff[count];
   	BYTE ReadStatus=1;
 
-	unsigned int i=0;
+	uint16_t i=0;
+
 
 	if ((offset+count)>512)
 		{
@@ -59,14 +79,26 @@ DRESULT disk_readp (
 	//ReadStatus=SD_ReadBlock(buffer,sector+8192, 512);
             uint8_t startDataToken1=0;
         
-            SD_SendCmd(17,sector+8192,512);
+            SD_SendCmd(17,sector,512);   // команду CMD17 в качестве аргумента передаётся физический адрес сектора
+            								  // причём сама библиотека оперирует логическим адресом 
+            								  //начало логического блока (logical block address LBA) у карт отличается
             SD_WriteByte(SD_DUMMY_BYTE);
             ReadStatus=SD_ReadByte();
             do
               startDataToken1=SD_ReadByte();  //start Data Token=11111110
             while(startDataToken1!=0xFE);
-            for(i=0;i<512;i++)   //сначала передаются старшие байты
-            buffer[i]=SD_ReadByte();
+
+            for (i=0;i<512;i++)
+            {
+            	if ( (i >= offset) && (i < offset+count) )
+            		buff[i-offset]=SD_ReadByte();
+            	else
+            		SD_ReadByte();
+            }
+
+            //for(i=0;i<512;i++)   //сначала передаются старшие байты
+            //buffer[i]=SD_ReadByte();
+
             SD_ReadByte();
             SD_ReadByte();
         
@@ -77,14 +109,9 @@ DRESULT disk_readp (
 		return RES_NOTRDY;
 		
 
-	for (i=0;i<count;i++)
-	{
-		buff[i]=buffer[offset+i];
-	}
-
 	// Put your code here
 
-	return res;
+	return res;*/
 }
 
 

@@ -97,8 +97,9 @@ typedef struct {
 	WORD	fdate;		/* Last modified date */
 	WORD	ftime;		/* Last modified time */
 	BYTE	fattrib;	/* Attribute */
-	char	fname[13];	/* File name */
-} FILINFO;
+	char	fname[13];	/* File name */  //Максимальное имя файла 13 символов
+										 //The Petit FatFs module supports only 8.3 format file name + path name is terminated with a '\0'
+} FILINFO;												
 
 
 

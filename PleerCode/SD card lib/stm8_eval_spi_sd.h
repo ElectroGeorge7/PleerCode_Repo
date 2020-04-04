@@ -173,6 +173,12 @@ typedef enum
   */
 #define SD_DUMMY_BYTE   0xFF
 
+#define SD_RESPONSE_CHECKS_COUNT 70 //количество проверок ответа SDMC на команду
+                                    //было 25, но при этом функция некорректно работала с принятием Data token start byte, Start Single Block Read
+                                    //потому что необходимо подождать некоторое время пока карта обработает запрос и выдаст ответ
+                                    //на низких частотах хватало 25 проверок (за счёт бОльшего времени передачи данных), 
+                                    //на высоких необходимо повысить количесвто, на макс частоте 8МГц не менее 67(определил опытным путём)
+
 /**
   * @brief  Start Data tokens:
   *         Tokens (necessary because at nop/idle (and CS active) only 0xff is 
@@ -261,6 +267,9 @@ uint8_t SD_Initialize(void);                                                    
 uint8_t SD_Detect(void);
 uint8_t SD_GetCardInfo(SD_CardInfo *cardinfo);
 uint8_t SD_ReadBlock(uint8_t* pBuffer, uint32_t ReadAddr, uint16_t BlockSize);              //эта функция работает, почему то при высоких частотах функция передачи данных функция не работала
+
+uint8_t SD_ReadBlock_PFF(uint8_t* pBuffer, uint32_t ReadAddr,  uint16_t offset, uint16_t count); //эта функция написана мной для работы с Petit FAT
+
 uint8_t SD_ReadBuffer(uint8_t *pBuffer, uint32_t ReadAddr, uint32_t NumByteToRead);         //насчёт работоспособности не знаю, но в Petit FAT она не нужна
 uint8_t SD_WriteBlock(uint8_t* pBuffer, uint32_t WriteAddr, uint16_t BlockSize);            //эта функция работает
 uint8_t SD_WriteBuffer(uint8_t *pBuffer, uint32_t WriteAddr, uint32_t NumByteToWrite);      //насчёт работоспособности не знаю, но в Petit FAT она не нужна

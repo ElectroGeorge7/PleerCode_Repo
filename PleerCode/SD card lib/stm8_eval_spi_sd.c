@@ -172,7 +172,7 @@ uint8_t SD_Initialize(void)
    //на некоторых сайтах пишут, что можно использовать команду CMD1 для инициализации, но я буду делать по спецификации
    do{                                          
        //CMD55
-       SD_SendCmd(SD_CMD_APP_CMD,0,0);               //аргумент и CRC не имеют значения
+       SD_SendCmd(SD_CMD_APP_CMD,0,0x01);         //аргумент и CRC не имеют значения, последний бит(end bit) должен быть равен 1 (7.3.1.1)
        SD_WriteByte(SD_DUMMY_BYTE);
        SD_ReadByte();                         //ответ R1, здесь он пока не интересует
                                    
@@ -193,7 +193,7 @@ uint8_t SD_Initialize(void)
 
    do{
   //CMD58
-   SD_SendCmd(SD_CMD_READ_OCR,0,0);
+   SD_SendCmd(SD_CMD_READ_OCR,0,0x01);
    SD_WriteByte(SD_DUMMY_BYTE);
    if ( SD_GetResponse(SD_IN_READY_STATE) == SD_RESPONSE_FAILURE )
       return  SD_RESPONSE_FAILURE;
@@ -273,6 +273,9 @@ uint8_t SD_GetCardInfo(SD_CardInfo *cardinfo)
   *         - SD_RESPONSE_FAILURE: Sequence failed
   *         - SD_RESPONSE_NO_ERROR: Sequence succeed
   */
+//на высоких частотах функция не работала из-за того, что ответ карты SD_CMD_READ_SINGLE_BLOCK нужно ждать некоторое время
+//при ограниченном числе проверок ответа в функции SD_GetResponse() (25 проверок) на высоких частотах карте не хватало времени, чтобы выдать ответ
+//поэтому я увеличил количество проверок до 70 (для макс частоты 8МГц этого хватает карте чтобы выдать ответ)
 uint8_t SD_ReadBlock(uint8_t* pBuffer, uint32_t ReadAddr, uint16_t BlockSize)
 {
   uint32_t i = 0;
@@ -316,6 +319,50 @@ uint8_t SD_ReadBlock(uint8_t* pBuffer, uint32_t ReadAddr, uint16_t BlockSize)
   return rvalue;
 
 }
+
+//Данная функция немного изменена по отношению к SD_ReadBlock() для того, чтобы она нормально работала с библиотекой pff Petit FAT
+//В этой функции задается отступ в секторе offset, с которого надо начать чтение, и количество байт count, которые надо считать
+uint8_t SD_ReadBlock_PFF(uint8_t* pBuffer, uint32_t ReadAddr,  uint16_t offset, uint16_t count)
+{
+  uint16_t i = 0;
+  uint8_t rvalue = SD_RESPONSE_FAILURE;
+
+  /*!< Send CMD17 (SD_CMD_READ_SINGLE_BLOCK) to read one block */
+  SD_SendCmd(SD_CMD_READ_SINGLE_BLOCK, ReadAddr, 0xFF);
+  SD_WriteByte(SD_DUMMY_BYTE);
+
+  /*!< Check if the SD acknowledged the read block command: R1 response (0x00: no errors) */
+  if (!SD_GetResponse(SD_RESPONSE_NO_ERROR))
+  {
+    /*!< Now look for the data token to signify the start of the data */
+    if (!SD_GetResponse(SD_START_DATA_SINGLE_BLOCK_READ))
+    {
+      //Запись в массив только count байтов с отступом в offset от начала сектора, остальные байты игнорируются
+      for (i=0;i<512;i++)
+            {
+              if ( (i >= offset) && (i < offset+count) )
+                pBuffer[i-offset]=SD_ReadByte();
+              else
+                SD_ReadByte();
+            }
+      /*!< Get CRC bytes (not really needed by us, but required by SD) */
+      SD_ReadByte();
+      SD_ReadByte();
+      /*!< Set response value to success */
+      rvalue = SD_RESPONSE_NO_ERROR;
+    }
+  }
+
+  /*!< Send dummy byte: 8 Clock pulses of delay */
+  SD_WriteByte(SD_DUMMY_BYTE);
+
+  /*!< Returns the reponse */
+  return rvalue;
+
+}
+
+
+
 
 /**
   * @brief  Read a buffer (many blocks) from the SD card.
@@ -831,8 +878,11 @@ uint8_t SD_GetDataResponse(void)
   */
 uint8_t SD_GetResponse(uint8_t Response)
 {
-  uint8_t Count = 25;
-
+  uint8_t Count = SD_RESPONSE_CHECKS_COUNT; 
+                      //было 25, но при этом функция некорректно работала с принятием Data token start byte, Start Single Block Read
+                      //потому что необходимо подождать некоторое время пока карта обработает запрос и выдаст ответ
+                      //на низких частотах хватало 25 проверок (за счёт бОльшего времени передачи данных), 
+                      //на высоких необходимо повысить количесвто, на макс частоте 8МГц не менее 67(определил опытным путём)
   /*!< Check if response is got or a timeout is happen */
   while ((SD_ReadByte() != Response) && Count)
   {
