@@ -129,8 +129,9 @@ uint8_t SD_Initialize(void)
   SD_Version version;
 
 
-  SD_SPI_Init(); //инициализация SPI модуля и установка режимов пинов, включая CS
-   
+  SD_SPI_Init(); //инициализация SPI модуля и установка режимов пинов, включая CS 
+  //Инициализация должна проходить на частоте от 100 кГц до 400кГц
+
   //Idle State
 
   //посылаются быйты 0xFF для отправки мимнимум 74 тактовых сигналов, как я понял, нужно для того, чтобы SD карта настроилась на частоту
@@ -216,7 +217,7 @@ uint8_t SD_Initialize(void)
 
   } while(Count--);
 
-  SD_SPI_Init_HighFreq();
+  SD_SPI_Init_HighFreq(); 
    
    return version;
 }

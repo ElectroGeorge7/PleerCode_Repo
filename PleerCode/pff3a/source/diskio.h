@@ -11,6 +11,7 @@ extern "C" {
 
 #include "pff.h"
 #include "stm8l15x.h"
+#include "stm8l15x_syscfg.h"
 #include "stm8_eval_spi_sd.h"
 
 /* Status of Disk Functions */

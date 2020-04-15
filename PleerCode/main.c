@@ -1,4 +1,3 @@
-
 //#include "iostm8l152c6.h" // этот файл подключать не надо, потому что происходит 
                             //переопределение дефайнов при совместном 
                             //использовании iostm8l152c6.h и stm8l15x.h
@@ -28,11 +27,8 @@
 //для STM8_EVAL в папку нашего проекта, а дальше будем всё приводить к нужному виду
 //для работы с STM8l152C6
 
-#include "stm8_eval_spi_sd.h"
-#include "stm8l15x_spi.h"
 #include "stm8l15x_gpio.h"
-#include "stm8l15x_clk.h"
-#include "stm8l15x_syscfg.h" 
+
 #include "stm8l15x_dac.h"
 #include "stm8l15x_tim4.h"
 
@@ -40,22 +36,13 @@
 #include "pff.h"
 #include "diskio.h"
 
+#include "Control.h"
+#include "Initialization.h"
 
-void Delay(__IO uint16_t nCount)    //пока что оставлю программную задержку, если останется время сделаю нормально, в инете куча примеров
-{
-  /* Decrement nCount value */
-  while (nCount != 0)
-  {
-    nCount--;
-  }
-}
+#include "string.h"
 
-typedef enum
-{
-  BUF_WAS_READ = ((uint8_t)0x00), 
-  BUF_WAS_WRITTEN  = ((uint8_t)0x01), 
-  BUF_ERROR = ((uint8_t)0xFF)
-}BUFFER_STATUS;
+
+PLEER_MODE mode;
 
 #define BUFFER_SIZE 500
 
@@ -65,18 +52,43 @@ uint8_t Buffer2[BUFFER_SIZE];
 BUFFER_STATUS Buf1_Status;
 BUFFER_STATUS Buf2_Status;
 
-uint8_t* buffer;
+uint16_t ByteinBuffer=0;
 
-//uint8_t temp=0xff;
-uint16_t i=0;
-uint16_t j=0;
+
+#define EXTI3_vector                         13 /* IRQ No. in STM8 manual: 11, взято из iostm8l152c6.h */
+#pragma vector=EXTI3_vector
+__interrupt void ButtonPress(void)
+{
+  if ( GPIO_ReadInputDataBit(Button_Port, Button_Pin) == RESET )
+  {
+    // Проверка на дребезг
+    Delay(2000);
+    if ( GPIO_ReadInputDataBit(Button_Port, Button_Pin) == RESET )
+    {
+      // Определение долгого или короткого нажатия
+      Delay(5000);
+      if ( GPIO_ReadInputDataBit(Button_Port, Button_Pin) == RESET )
+      {
+        // Долгое нажатие
+        if ( mode != SelectMode )
+          mode=SelectMode;
+      }
+      else
+      {
+        // Короткое нажатие
+        if ( mode != PlayMode ) 
+          mode=PlayMode;
+        else 
+          mode=RewindMode;  
+      }
+    }  
+  }
+  EXTI_ClearITPendingBit(Button_IT_Flag);
+}
 
 
 //обработчик прерывания для таймера
 #define TIM4_UIF_vector                      27 /* IRQ No. in STM8 manual: 25 , взято из iostm8l152c6.h*/ 
-
-
-
 //перед объявлением обработчика прерывания необходимо указать номер вектора прерывания,
 //который можно найти в конце iostm8l152c6.h, либо номер из даташита +2
 #pragma vector=TIM4_UIF_vector                                                                                         
@@ -86,22 +98,21 @@ __interrupt void SetDAC_TIM4IT (void)
 //(в данном случае примерно 0x93), при уменьшении значения регистра TIM4_ARR таймера во время обработки 
 //прерывания может возникнуть новое прерывание по совпадению
 {  
-  if ( Buf1_Status == BUF_WAS_WRITTEN )
+  
+   if ( Buf1_Status == BUF_WAS_WRITTEN )
     { 
-      if ( i < BUFFER_SIZE ){
-          DAC_SoftwareTriggerCmd(DAC_Channel_1, ENABLE);
-          DAC_SetChannel1Data(DAC_Align_12b_R, Buffer1[i++]);
+      if ( ByteinBuffer < BUFFER_SIZE ){
+          DAC_SetChannel1Data(DAC_Align_12b_R, Buffer1[ByteinBuffer++]);
         }else{
-          i=0;
+          ByteinBuffer=0;
           Buf1_Status=BUF_WAS_READ;}
     }else
     if ( Buf2_Status == BUF_WAS_WRITTEN )
     {
-      if ( i < BUFFER_SIZE ){
-          DAC_SoftwareTriggerCmd(DAC_Channel_1, ENABLE);
-          DAC_SetChannel1Data(DAC_Align_12b_R, Buffer2[i++]);
+      if ( ByteinBuffer < BUFFER_SIZE ){
+          DAC_SetChannel1Data(DAC_Align_12b_R, Buffer2[ByteinBuffer++]);
         }else{
-          i=0;
+          ByteinBuffer=0;
           Buf2_Status=BUF_WAS_READ;}
     };
 
@@ -111,69 +122,156 @@ __interrupt void SetDAC_TIM4IT (void)
 
   
 FATFS fs; //объявление объекта FATFS
-FRESULT res; //переменная для возвращаемых значений
-FRESULT res1; //переменная для возвращаемых значений
-FRESULT res2; //переменная для возвращаемых значений
-WORD br;
+FILINFO fno;
+DIR dir;
+FRESULT mountRes; //переменная для возвращаемых значений
+FRESULT odirRes; //переменная для возвращаемых значений
+FRESULT sfileRes; //переменная для возвращаемых значений
+FRESULT ofileRes; //переменная для возвращаемых значений
+FRESULT rfileRes; //переменная для возвращаемых значений
+FRESULT res4; //переменная для возвращаемых значений
+UINT readedBytes;
 
 
-uint8_t resp1=1;
+uint8_t resp1=0;
 uint8_t resp11=0;
 uint8_t resp12=0;
-uint8_t resp13=0;
-uint8_t resp14=0;
-uint8_t startDataToken1=0;
-uint8_t CRC11=0;
-uint8_t CRC22=0;
-uint8_t ReadStatus=1;
 
-//при частоте после предделителя таймера 4 Мгц
-#define TIM4_22kHz_FREQ  181//181  
-#define TIM4_44kHz_FREQ  91 
+
+char filepath[25];
+
 
 int main( void )
 {
-  
-  Delay(1000);     
-  //смонтировать диск
-  res = pf_mount(&fs);
-  res1=pf_open("BACKINBL.wav");
-  res2 = pf_read(Buffer1, BUFFER_SIZE, &br);
-  Buf1_Status=BUF_WAS_WRITTEN;
-  Buf2_Status=BUF_WAS_READ;
+  /* Порядок инициализации лучше не менять, т.к. ЦАП использует сигнал с TIM4*/
+  // Инициализация TIM4 без включения модуля
+  TIM4_Initialization();
+  // Инициализация ЦАП с включением модуля
+  DAC_Initialization();
+  // Инициализация кнопки с прерыванием
+  Button_Initialization();
+  // Инициализация ТIM1 в режиме энкодера без включения модуля
+  //TIM1_Initialization();
 
-
-//Установка таймера 4
-  CLK_PeripheralClockConfig( CLK_Peripheral_TIM4, ENABLE);
-  //будем считать, что общая системная частота равна 16 МГц
-  TIM4_TimeBaseInit(TIM4_Prescaler_4, TIM4_22kHz_FREQ);    //при изменении системной частоты изменить значение предделителя
   asm("rim"); //глобально разрешаем прерывание
-  TIM4_ITConfig(TIM4_IT_Update, ENABLE); //разрешаем прерывания
-  TIM4_Cmd(ENABLE);
+
+  // Монтирование диска
+  mountRes = pf_mount(&fs);
+  if ( mountRes != FR_OK )  //проверим результат и повторим ещё один раз перед завершением программы
+      {
+        pf_mount(NULL);
+        mountRes=pf_mount(&fs);
+        if ( mountRes != FR_OK )
+        return mountRes;
+      }
+ 
+  // Отркываем директорию Music/ и считаем количество файлов в ней
+  odirRes=pf_opendir(&dir, DIR_NAME);
+  CountFiles (&dir, &MaxNumber);
+  // Открываем первый файл
+  // res2 = pf_readdir(&dir, &fno);
+  // FileNumber++;
+
+  // mode=PlayMode;
+  // FileNumber=5;
+  // OffsetDirect=REWIND_FORWARD;
+  // FileOffset=3000000;
+
+   mode=SelectMode;
+  while(1)
+  {
+    while( mode == SelectMode )
+    {
+      // Включение TIM1 и проверить включение, если можно
+      ////////////////////////////////////////////////////////////
+    };
+    
+    if ( mode == PlayMode )
+    {
+      asm("sim"); //глобально запрещаем прерывание
+      // Отключение TIM1
+      /////////////////////////////////////////////////////////////
+      // Переносим указатель на нужный файл и открываем его
+      sfileRes=SelectFile(&dir, &fno, filepath,FileNumber);
+      ofileRes=pf_open(filepath);
+      if ( ofileRes != FR_OK )
+        return ofileRes;
+      //Перематываем файл
+      RewindFile(&fs, OffsetDirect, FileOffset);  
+      // Предварительно заполняем Buffer1
+      rfileRes=pf_read(Buffer1, BUFFER_SIZE, &readedBytes);
+      if ( rfileRes != FR_OK )
+        return rfileRes;
+      Buf1_Status=BUF_WAS_WRITTEN;
+      Buf2_Status=BUF_WAS_READ;
+      // Включение TIM4
+      asm("rim"); //глобально разрешаем прерывание
+      TIM4_Cmd(ENABLE);
+      while( (mode == PlayMode) && (readedBytes == BUFFER_SIZE) && (rfileRes == FR_OK) )
+      {
+        if ( Buf1_Status == BUF_WAS_WRITTEN && Buf2_Status == BUF_WAS_READ )
+        {
+          rfileRes=pf_read(Buffer2, BUFFER_SIZE, &readedBytes);
+          Buf2_Status=BUF_WAS_WRITTEN;
+        }else
+          if ( Buf2_Status == BUF_WAS_WRITTEN && Buf1_Status == BUF_WAS_READ )
+        {
+          rfileRes=pf_read(Buffer1, BUFFER_SIZE, &readedBytes);
+          Buf1_Status=BUF_WAS_WRITTEN;
+        };
+      };
+      // Отключение TIM4
+      TIM4_Cmd(DISABLE);
+
+      if ( rfileRes != FR_OK )
+      return rfileRes;
+      // Если количество прочтённых байтов меньше BUFFER_SIZE, след-но файл закончился и переходим в режим SelectMode
+      if ( readedBytes != BUFFER_SIZE )
+        mode=SelectMode;
+    };
+
+    if ( mode == RewindMode )
+    {
+      // Включение TIM1 и проверить включение, если можно
+      ////////////////////////////////////////////////////////////
+    }
+  }
+
+  
+   
+  
+  // res2=ChangeFile( &dir, &fno, filepath, PREVIOUS_FILE );
+  // res2=ChangeFile( &dir, &fno, filepath, NEXT_FILE );
+  //  res2=ChangeFile( &dir, &fno, filepath, NEXT_FILE);
+  //   res2=ChangeFile(  &dir, &fno, filepath, NEXT_FILE);
+ 
+  // res3=pf_open(filepath);
+
+  // RewindFile( &fs, REWIND_FORWARD, 2700000 );
+  // rewind( &fs, REWIND_BACK, 1000000 );
+
+  // res4=pf_read(Buffer1, BUFFER_SIZE, &br);
+  // Buf1_Status=BUF_WAS_WRITTEN;
+  // Buf2_Status=BUF_WAS_READ;
 
 
-//Инициализация ЦАП
- GPIO_Init( GPIOF , GPIO_Pin_0, GPIO_Mode_In_FL_No_IT);  //аналоговый режим (RM0031 стр.121)
- CLK_PeripheralClockConfig(CLK_Peripheral_DAC, ENABLE);
- DAC_Init(DAC_Channel_1, DAC_Trigger_Software, DAC_OutputBuffer_Enable);
- DAC_Cmd(DAC_Channel_1, ENABLE);
- DAC_SoftwareTriggerCmd(DAC_Channel_1, ENABLE);
- DAC_SetChannel1Data(DAC_Align_12b_R, 0x20);
+// // Включение TIM4
+//   TIM4_Cmd(ENABLE);
  
   
- while(1){
-   if ( Buf1_Status == BUF_WAS_WRITTEN && Buf2_Status == BUF_WAS_READ )
-   {
-     res2=pf_read(Buffer2, BUFFER_SIZE, &br);
-     Buf2_Status=BUF_WAS_WRITTEN;
-   }else
-     if ( Buf2_Status == BUF_WAS_WRITTEN && Buf1_Status == BUF_WAS_READ )
-   {
-     res2=pf_read(Buffer1, BUFFER_SIZE, &br);
-     Buf1_Status=BUF_WAS_WRITTEN;
-   };
-   
- }
+//  while(1){
+
+//    if ( Buf1_Status == BUF_WAS_WRITTEN && Buf2_Status == BUF_WAS_READ )
+//    {
+//      res2=pf_read(Buffer2, BUFFER_SIZE, &br);
+//      Buf2_Status=BUF_WAS_WRITTEN;
+//    }else
+//      if ( Buf2_Status == BUF_WAS_WRITTEN && Buf1_Status == BUF_WAS_READ )
+//    {
+//      res2=pf_read(Buffer1, BUFFER_SIZE, &br);
+//      Buf1_Status=BUF_WAS_WRITTEN;
+//    };
+
 
 
 return 0;

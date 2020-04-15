@@ -17,12 +17,22 @@ DSTATUS disk_initialize (void)
 
 	uint8_t version;
 
+	// СИСТЕМНОЕ ТАКТИРОВАНИЕ
+	// при изменении системной частоты необходимо изменить коэффициенты тактирования TIM4, TIM1, SPI
+    CLK_SYSCLKDivConfig(CLK_SYSCLKDiv_1); // основное тактирование без делителя, т.е. на 16 Мгц, 
+	
+
+    Delay(1000); 
 	version=SD_Initialize();
 
 	if ( (version == VER1_SDSC) || (version == VER2_SDSC) || (version == VER2_SDHC_SDXC) )
 		stat=STA_INIT_SUCCESS;
 	else
-		stat=STA_NOINIT;		
+		stat=STA_NOINIT;	
+
+
+
+
 
 	return stat;             //если stat=STA_NOINIT=0x01,то произошёл сбой инициализации и функция  pf_mount() выдаст return FR_NOT_READY, 
 							 //при любом другом значении инициализация для функции pf_mount() считается успешной
