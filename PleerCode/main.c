@@ -30,7 +30,10 @@
 #include "stm8l15x_gpio.h"
 
 #include "stm8l15x_dac.h"
+#include "stm8l15x_tim1.h"
+#include "stm8l15x_tim2.h"
 #include "stm8l15x_tim4.h"
+
 
 #include "pffconf.h"
 #include "pff.h"
@@ -42,48 +45,45 @@
 #include "string.h"
 
 
-PLEER_MODE mode;
+static PLEER_MODE mode;
 
 #define BUFFER_SIZE 500
 
-uint8_t Buffer1[BUFFER_SIZE];
-uint8_t Buffer2[BUFFER_SIZE];
+static uint8_t Buffer1[BUFFER_SIZE];
+static uint8_t Buffer2[BUFFER_SIZE];
 
 BUFFER_STATUS Buf1_Status;
 BUFFER_STATUS Buf2_Status;
 
-uint16_t ByteinBuffer=0;
+static uint16_t ByteinBuffer=0;
 
-
-#define EXTI3_vector                         13 /* IRQ No. in STM8 manual: 11, взято из iostm8l152c6.h */
-#pragma vector=EXTI3_vector
+#define TIM2_OVR_UIF_vector                  21 /* IRQ No. in STM8 manual: 19 , взято из iostm8l152c6.h */
+#pragma vector=TIM2_OVR_UIF_vector  
 __interrupt void ButtonPress(void)
 {
+  static uint8_t pressTime=0;
+  PRESS_STATUS pressStat=NOT_PRESS;
+
   if ( GPIO_ReadInputDataBit(Button_Port, Button_Pin) == RESET )
   {
-    // Проверка на дребезг
-    Delay(2000);
-    if ( GPIO_ReadInputDataBit(Button_Port, Button_Pin) == RESET )
-    {
-      // Определение долгого или короткого нажатия
-      Delay(5000);
-      if ( GPIO_ReadInputDataBit(Button_Port, Button_Pin) == RESET )
-      {
-        // Долгое нажатие
-        if ( mode != SelectMode )
-          mode=SelectMode;
-      }
-      else
-      {
-        // Короткое нажатие
-        if ( mode != PlayMode ) 
-          mode=PlayMode;
-        else 
-          mode=RewindMode;  
-      }
-    }  
+     if ( pressTime < MAX_LONG_TIME ) //Если кнопка нажата очень долгое время (~5с), ничего не делаем
+      pressTime++;
   }
-  EXTI_ClearITPendingBit(Button_IT_Flag);
+  else if ( pressTime > 0 )
+  {
+    pressStat=(pressTime > MAX_SHORT_TIME) ? LONG_PRESS : SHORT_PRESS;
+    pressTime=0;
+  }
+
+  // Короткое нажатие
+  if ( pressStat == SHORT_PRESS )
+    mode=(mode != PlayMode) ? PlayMode : RewindMode; 
+
+  // Долгое нажатие
+   if ( pressStat == LONG_PRESS )
+    mode=SelectMode; 
+
+  TIM2_ClearITPendingBit(TIM2_IT_Update);
 }
 
 
@@ -120,7 +120,6 @@ __interrupt void SetDAC_TIM4IT (void)
 };
 
 
-  
 FATFS fs; //объявление объекта FATFS
 FILINFO fno;
 DIR dir;
@@ -129,29 +128,29 @@ FRESULT odirRes; //переменная для возвращаемых знач
 FRESULT sfileRes; //переменная для возвращаемых значений
 FRESULT ofileRes; //переменная для возвращаемых значений
 FRESULT rfileRes; //переменная для возвращаемых значений
-FRESULT res4; //переменная для возвращаемых значений
+FRESULT rewfileRes; //переменная для возвращаемых значений
 UINT readedBytes;
 
-
-uint8_t resp1=0;
-uint8_t resp11=0;
-uint8_t resp12=0;
-
-
+// символьный массив для расположения имени файла
 char filepath[25];
-
 
 int main( void )
 {
+  uint16_t MaxNumber=0;
+  uint16_t FileNumber=1;
+  DWORD filePointer=0;
+
   /* Порядок инициализации лучше не менять, т.к. ЦАП использует сигнал с TIM4*/
+  // Инициализация ТIM1 в режиме энкодера без включения модуля
+  TIM1_Initialization();
+  // Инициализация TIM2 без включения модуля
+  TIM2_Initialization();
   // Инициализация TIM4 без включения модуля
   TIM4_Initialization();
   // Инициализация ЦАП с включением модуля
   DAC_Initialization();
   // Инициализация кнопки с прерыванием
   Button_Initialization();
-  // Инициализация ТIM1 в режиме энкодера без включения модуля
-  //TIM1_Initialization();
 
   asm("rim"); //глобально разрешаем прерывание
 
@@ -159,6 +158,7 @@ int main( void )
   mountRes = pf_mount(&fs);
   if ( mountRes != FR_OK )  //проверим результат и повторим ещё один раз перед завершением программы
       {
+        Delay(1000);
         pf_mount(NULL);
         mountRes=pf_mount(&fs);
         if ( mountRes != FR_OK )
@@ -168,45 +168,48 @@ int main( void )
   // Отркываем директорию Music/ и считаем количество файлов в ней
   odirRes=pf_opendir(&dir, DIR_NAME);
   CountFiles (&dir, &MaxNumber);
-  // Открываем первый файл
-  // res2 = pf_readdir(&dir, &fno);
-  // FileNumber++;
 
-  // mode=PlayMode;
-  // FileNumber=5;
-  // OffsetDirect=REWIND_FORWARD;
-  // FileOffset=3000000;
 
-   mode=SelectMode;
+  mode=SelectMode;
   while(1)
   {
-    while( mode == SelectMode )
+    if ( mode == SelectMode )
     {
-      // Включение TIM1 и проверить включение, если можно
-      ////////////////////////////////////////////////////////////
-    };
-    
-    if ( mode == PlayMode )
-    {
-      asm("sim"); //глобально запрещаем прерывание
-      // Отключение TIM1
-      /////////////////////////////////////////////////////////////
-      // Переносим указатель на нужный файл и открываем его
-      sfileRes=SelectFile(&dir, &fno, filepath,FileNumber);
+      // Включаем таймер TIM2 на сканирование кнопки
+      TIM2_Cmd(ENABLE);
+      // Включение и сброс TIM1 
+      TIM1_SetCounter(0);
+      TIM1_Cmd(ENABLE);
+      // Цикл, в котором происходит вращение энкодера
+      while( mode == SelectMode );
+      // Отключение TIM1 и TIM2
+      TIM1_Cmd(DISABLE);
+      TIM2_Cmd(DISABLE);
+      //Глобально запрещаем прерывания
+      asm("sim"); 
+      // Изменяем номер файла
+      SelectFile( TIM1_GetCounter(), &FileNumber, MaxNumber );
+      // Переносим указатель на нужный файл по его номеру и открываем его
+      sfileRes=ChangeFile(&dir, &fno, filepath, 1);  // костыль, без понятия, зачем эта строчка, но без неё не работает 
+      sfileRes=ChangeFile(&dir, &fno, filepath, FileNumber);
       ofileRes=pf_open(filepath);
       if ( ofileRes != FR_OK )
-        return ofileRes;
-      //Перематываем файл
-      RewindFile(&fs, OffsetDirect, FileOffset);  
+        return ofileRes;   
+      //Глобально разрешаем прерывания
+      asm("rim"); 
+    };
+
+    if ( mode == PlayMode )
+    {
       // Предварительно заполняем Buffer1
       rfileRes=pf_read(Buffer1, BUFFER_SIZE, &readedBytes);
       if ( rfileRes != FR_OK )
         return rfileRes;
       Buf1_Status=BUF_WAS_WRITTEN;
       Buf2_Status=BUF_WAS_READ;
-      // Включение TIM4
-      asm("rim"); //глобально разрешаем прерывание
+      // Включение TIM4 и TIM2
       TIM4_Cmd(ENABLE);
+      TIM2_Cmd(ENABLE);
       while( (mode == PlayMode) && (readedBytes == BUFFER_SIZE) && (rfileRes == FR_OK) )
       {
         if ( Buf1_Status == BUF_WAS_WRITTEN && Buf2_Status == BUF_WAS_READ )
@@ -219,60 +222,46 @@ int main( void )
           rfileRes=pf_read(Buffer1, BUFFER_SIZE, &readedBytes);
           Buf1_Status=BUF_WAS_WRITTEN;
         };
+
       };
-      // Отключение TIM4
+      // Отключение TIM4 и TIM2
       TIM4_Cmd(DISABLE);
+      TIM2_Cmd(DISABLE);
 
       if ( rfileRes != FR_OK )
-      return rfileRes;
+        return rfileRes;
       // Если количество прочтённых байтов меньше BUFFER_SIZE, след-но файл закончился и переходим в режим SelectMode
       if ( readedBytes != BUFFER_SIZE )
         mode=SelectMode;
     };
 
     if ( mode == RewindMode )
-    {
-      // Включение TIM1 и проверить включение, если можно
-      ////////////////////////////////////////////////////////////
+    { 
+      // Включаем таймер TIM2 на сканирование кнопки
+      TIM2_Cmd(ENABLE);
+      // Включение и сброс TIM1 
+      TIM1_SetCounter(0);
+      TIM1_Cmd(ENABLE);
+      // Цикл, в котором происходит вращение энкодера
+      while( mode == RewindMode );
+       // Отключение TIM1 и TIM2
+      TIM1_Cmd(DISABLE);
+      TIM2_Cmd(DISABLE);
+      //Глобально запрещаем прерывания
+      asm("sim"); 
+      // Сохраняем нынешнее значение указателя
+      filePointer=fs.fptr;
+      sfileRes=ChangeFile(&dir, &fno, filepath, 1);  // костыль, без понятия, зачем эта строчка, но без неё не работает 
+      // на удивление нет необходимости менять номер файла и заново открывать файл 
+      //Перематываем файл
+      rewfileRes=RewindFile(&fs, filePointer, TIM1_GetCounter());   
+       if ( rewfileRes != FR_OK )
+        return rewfileRes;
+      //Глобально разрешаем прерывания
+       asm("rim"); 
     }
+
   }
-
-  
-   
-  
-  // res2=ChangeFile( &dir, &fno, filepath, PREVIOUS_FILE );
-  // res2=ChangeFile( &dir, &fno, filepath, NEXT_FILE );
-  //  res2=ChangeFile( &dir, &fno, filepath, NEXT_FILE);
-  //   res2=ChangeFile(  &dir, &fno, filepath, NEXT_FILE);
- 
-  // res3=pf_open(filepath);
-
-  // RewindFile( &fs, REWIND_FORWARD, 2700000 );
-  // rewind( &fs, REWIND_BACK, 1000000 );
-
-  // res4=pf_read(Buffer1, BUFFER_SIZE, &br);
-  // Buf1_Status=BUF_WAS_WRITTEN;
-  // Buf2_Status=BUF_WAS_READ;
-
-
-// // Включение TIM4
-//   TIM4_Cmd(ENABLE);
- 
-  
-//  while(1){
-
-//    if ( Buf1_Status == BUF_WAS_WRITTEN && Buf2_Status == BUF_WAS_READ )
-//    {
-//      res2=pf_read(Buffer2, BUFFER_SIZE, &br);
-//      Buf2_Status=BUF_WAS_WRITTEN;
-//    }else
-//      if ( Buf2_Status == BUF_WAS_WRITTEN && Buf1_Status == BUF_WAS_READ )
-//    {
-//      res2=pf_read(Buffer1, BUFFER_SIZE, &br);
-//      Buf1_Status=BUF_WAS_WRITTEN;
-//    };
-
-
 
 return 0;
 }

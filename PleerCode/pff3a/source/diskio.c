@@ -30,10 +30,6 @@ DSTATUS disk_initialize (void)
 	else
 		stat=STA_NOINIT;	
 
-
-
-
-
 	return stat;             //если stat=STA_NOINIT=0x01,то произошёл сбой инициализации и функция  pf_mount() выдаст return FR_NOT_READY, 
 							 //при любом другом значении инициализация для функции pf_mount() считается успешной
 							 //сделаем след. образом: если инициализация действительно прошла как надо, то stat=STA_INIT_SUCCESS=0

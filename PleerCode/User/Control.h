@@ -12,26 +12,25 @@ typedef enum
 
 typedef enum
 {
+  NOT_PRESS,
+  SHORT_PRESS,
+  LONG_PRESS
+} PRESS_STATUS;
+
+typedef enum
+{
   BUF_WAS_READ = ((uint8_t)0x00), 
   BUF_WAS_WRITTEN  = ((uint8_t)0x01), 
   BUF_ERROR = ((uint8_t)0xFF)
 } BUFFER_STATUS;
 
-typedef enum
-{
-  REWIND_FORWARD = ((uint8_t)0x00), 
-  REWIND_BACK  = ((uint8_t)0x01)
-}REWIND_DIRECT;
 
 #define DIR_NAME "Music"
+#define REWIND_FACTOR 15
 
-// Глобальные перменные
-extern uint16_t       MaxNumber;
-extern uint16_t       FileNumber;
-extern uint32_t       FileOffset;
-extern REWIND_DIRECT  OffsetDirect;
 
 void Delay(uint16_t nCount);
 FRESULT CountFiles (DIR* dir, uint16_t* MaxNum);
-FRESULT SelectFile (DIR* dir, FILINFO* fno, char* filepath, uint16_t FileNum);
-FRESULT RewindFile (FATFS* fs, REWIND_DIRECT direct, DWORD offset);
+void SelectFile(uint16_t cntrVal, uint16_t* FileNum, uint16_t MaxNum);
+FRESULT ChangeFile (DIR* dir, FILINFO* fno, char* filepath, uint16_t FileNum);
+FRESULT RewindFile(FATFS* fs,  DWORD filePointer, uint16_t cntrVal);
