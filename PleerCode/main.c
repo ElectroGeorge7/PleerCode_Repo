@@ -1,39 +1,11 @@
-//#include "iostm8l152c6.h" // этот файл подключать не надо, потому что происходит 
-                            //переопределение дефайнов при совместном 
-                            //использовании iostm8l152c6.h и stm8l15x.h
-                            //в stm8l15x.h есть все необходимые дефайны
-                            //(кроме векторов прерываний, из я не нашёл)
+#include "stm8l15x.h"      
 
-#include "stm8l15x.h"       //в этом файле описаны основные типы данных, 
-                            //указаны настройки компиляторов, 
-                            //значения регистров после сброса, маски битов в регистрах,
-                            //и самое главное-объявляются новые типы данных 
-                            //в виде структур по каждому периферийному элементу, 
-                            //которые потом ипользуются в периферийной библотеке от STM
- 
-#include "stm8l15x_spi.h"   //объявляются все функции для работы с SPI интерфейсом
-                            //в stm8l15x_spi.с эти функции определяются, 
-                            //описаны типы данных в виде перечисления(enum) 
-                            //под разные режимы работы SPI
-
-/* assert_param используется в файле stm8l15x_spi.с 
-При отладке программы очень удобно для вывода сообщений об той или иной ситуации, 
-иметь универсальную функцию, которая позволяла бы выводить сообщение об ошибке, 
-номер строки и файл в котором эта ошибка возникла.
-Для этого, в библиотеке периферии от ST, используется assert_param.
-Полное описание на сайте   http://badembed.ru/assert_param-stm32/   */
-
-//сделаем так: скопируем все необходимые файлы из примера с работой с SD картой
-//для STM8_EVAL в папку нашего проекта, а дальше будем всё приводить к нужному виду
-//для работы с STM8l152C6
-
+#include "stm8l15x_spi.h" 
 #include "stm8l15x_gpio.h"
-
 #include "stm8l15x_dac.h"
 #include "stm8l15x_tim1.h"
 #include "stm8l15x_tim2.h"
 #include "stm8l15x_tim4.h"
-
 
 #include "pffconf.h"
 #include "pff.h"
@@ -43,7 +15,6 @@
 #include "Initialization.h"
 
 #include "string.h"
-
 
 static PLEER_MODE mode;
 
@@ -124,11 +95,11 @@ FATFS fs; //объявление объекта FATFS
 FILINFO fno;
 DIR dir;
 FRESULT mountRes; //переменная для возвращаемых значений
-FRESULT odirRes; //переменная для возвращаемых значений
-FRESULT sfileRes; //переменная для возвращаемых значений
-FRESULT ofileRes; //переменная для возвращаемых значений
-FRESULT rfileRes; //переменная для возвращаемых значений
-FRESULT rewfileRes; //переменная для возвращаемых значений
+FRESULT odirRes; 
+FRESULT sfileRes; 
+FRESULT ofileRes; 
+FRESULT rfileRes; 
+FRESULT rewfileRes; 
 UINT readedBytes;
 
 // символьный массив для расположения имени файла
@@ -190,7 +161,7 @@ int main( void )
       // Изменяем номер файла
       SelectFile( TIM1_GetCounter(), &FileNumber, MaxNumber );
       // Переносим указатель на нужный файл по его номеру и открываем его
-      sfileRes=ChangeFile(&dir, &fno, filepath, 1);  // костыль, без понятия, зачем эта строчка, но без неё не работает 
+      sfileRes=ChangeFile(&dir, &fno, filepath, 1);   
       sfileRes=ChangeFile(&dir, &fno, filepath, FileNumber);
       ofileRes=pf_open(filepath);
       if ( ofileRes != FR_OK )
@@ -251,8 +222,7 @@ int main( void )
       asm("sim"); 
       // Сохраняем нынешнее значение указателя
       filePointer=fs.fptr;
-      sfileRes=ChangeFile(&dir, &fno, filepath, 1);  // костыль, без понятия, зачем эта строчка, но без неё не работает 
-      // на удивление нет необходимости менять номер файла и заново открывать файл 
+      sfileRes=ChangeFile(&dir, &fno, filepath, 1);  
       //Перематываем файл
       rewfileRes=RewindFile(&fs, filePointer, TIM1_GetCounter());   
        if ( rewfileRes != FR_OK )

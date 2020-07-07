@@ -2,8 +2,7 @@
 #include "string.h"
 
 
-void Delay(__IO uint16_t nCount)    //пока что оставлю программную задержку, если останется время сделаю нормально, в инете куча примеров
-{
+void Delay(__IO uint16_t nCount)    
   /* Decrement nCount value */
   while (nCount != 0)
   {
@@ -22,14 +21,14 @@ FRESULT CountFiles (DIR* dir, uint16_t* MaxNum)
 		if( res != FR_OK )
 		return res;
 	};
-
-        for (;;) {
-            res = pf_readdir(dir, &fno);
-            if (res != FR_OK || fno.fname[0] == 0) 
-              break;
-            else 
-              (*MaxNum)++;
-        }
+  
+  for (;;) {
+      res = pf_readdir(dir, &fno);
+      if (res != FR_OK || fno.fname[0] == 0) 
+        break;
+      else 
+        (*MaxNum)++;
+  }
 	// после прочтения всех файлов, указатель стоит на конечной позиции, чтобы его сбросить, нужно заново открыть директорию
 	res=pf_opendir(dir, DIR_NAME);
     return res;
@@ -74,9 +73,6 @@ FRESULT ChangeFile(DIR* dir, FILINFO* fno, char* filepath, uint16_t FileNum)
   do
   {
     res=pf_opendir(dir, DIR_NAME);
- //   if( res != FR_OK )
- // 	 return res;	 
-
    for(i=0; i<FileNum; i++)
 	    res=pf_readdir(dir, fno);
   } while( (res!=FR_OK) && Count-- );
@@ -104,8 +100,6 @@ FRESULT RewindFile(FATFS* fs, DWORD filePointer, uint16_t cntrVal)
   // Смещение в прямом направлеии - значением от 0 до 0х8000 
   if ( cntrVal < 0x8000 )
     {
-      // Долго мучался, тип cntrVal uint16_t и поэтому cntrVal нельзя умножать на большие числа (макс её значение 65536)
-      // Чтобы можно было работать с бОльшими числами нужно перенести значение cntrVal в тип uint32_t(DWORD)
       offset=cntrVal;
       // Смещение в прямом направлении
       offset=(uint32_t)(offset << REWIND_FACTOR); //сдвиг на 2 разряда вправо аналогичен умножению на 2^(REWIND_FACTOR)
